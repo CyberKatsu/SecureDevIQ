@@ -1,16 +1,15 @@
 """
 pages/challenge.py  —  Challenge view (route: /challenge)
-
 Layout:
-  ┌─────────────────────────────────────────────┐
-  │  Navbar                                     │
-  ├──────────────┬──────────────────────────────┤
-  │  Settings    │  Code snippet (read-only)    │
-  │  panel       │                              │
-  │  (language,  │  Answer textarea             │
-  │   difficulty,│                              │
-  │   category)  │  [Generate]    [Submit]      │
-  └──────────────┴──────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│  Navbar                                     │
+├──────────────┬──────────────────────────────┤
+│  Settings    │  Code snippet (read-only)    │
+│  panel       │                              │
+│  (language,  │  Answer textarea             │
+│   difficulty,│                              │
+│   category)  │  [Generate]    [Submit]      │
+└──────────────┴──────────────────────────────┘
 """
 import reflex as rx
 from securedeviq.components.navbar import navbar
@@ -27,6 +26,9 @@ CATEGORIES = [
     ("hardcoded_secrets", "Hardcoded Secrets"),
 ]
 
+# Create a mapping for display purposes
+CATEGORY_LABELS = {key: label for key, label in CATEGORIES}
+
 
 def challenge_page() -> rx.Component:
     return rx.box(
@@ -35,7 +37,7 @@ def challenge_page() -> rx.Component:
             rx.hstack(
                 # ── Left panel: settings ───────────────────────────────────
                 _settings_panel(),
-                # ── Right panel: code + answer ─────────────────────────────
+                # ── Right panel: code + answer ──────────────────────────────
                 _code_panel(),
                 spacing="6",
                 align="start",
@@ -56,7 +58,6 @@ def _settings_panel() -> rx.Component:
     return rx.card(
         rx.vstack(
             rx.text("Challenge Settings", font_weight="600", font_size="1rem"),
-
             rx.vstack(
                 rx.text("Language", font_size="0.85rem", color="#6b7280"),
                 rx.select(
@@ -68,7 +69,6 @@ def _settings_panel() -> rx.Component:
                 spacing="1",
                 width="100%",
             ),
-
             rx.vstack(
                 rx.text("Difficulty", font_size="0.85rem", color="#6b7280"),
                 rx.select(
@@ -80,25 +80,20 @@ def _settings_panel() -> rx.Component:
                 spacing="1",
                 width="100%",
             ),
-
             rx.vstack(
                 rx.text("Vulnerability Category", font_size="0.85rem", color="#6b7280"),
                 rx.select(
-                    [label for _, label in CATEGORIES],
-                    value=rx.cond(
-                        AppState.selected_category == "",
-                        "AI picks",
-                        AppState.selected_category,
-                    ),
-                    on_change=lambda v: AppState.set_category(
-                        next((k for k, label in CATEGORIES if label == v), "")
-                    ),
+                    [
+                        rx.select.option(label=label, value=key)
+                        for key, label in CATEGORIES
+                    ],
+                    value=AppState.selected_category,
+                    on_change=AppState.set_category,
                     width="100%",
                 ),
                 spacing="1",
                 width="100%",
             ),
-
             rx.button(
                 rx.cond(
                     AppState.is_loading_challenge,
@@ -107,8 +102,8 @@ def _settings_panel() -> rx.Component:
                 ),
                 rx.cond(
                     AppState.is_loading_challenge,
-                    " Generating...",
-                    " Generate Challenge",
+                    "Generating...",
+                    "Generate Challenge",
                 ),
                 on_click=AppState.load_challenge,
                 disabled=AppState.is_loading_challenge,
@@ -116,7 +111,6 @@ def _settings_panel() -> rx.Component:
                 color_scheme="indigo",
                 variant="solid",
             ),
-
             rx.cond(
                 AppState.challenge_error != "",
                 rx.callout(
@@ -125,7 +119,6 @@ def _settings_panel() -> rx.Component:
                     variant="soft",
                 ),
             ),
-
             # ── Difficulty legend ──────────────────────────────────────────
             rx.divider(),
             rx.vstack(
@@ -136,7 +129,6 @@ def _settings_panel() -> rx.Component:
                 spacing="2",
                 width="100%",
             ),
-
             spacing="4",
             width="16rem",
             align="start",
@@ -196,7 +188,6 @@ def _code_panel() -> rx.Component:
                 padding="1.25rem",
             ),
         ),
-
         # ── Code snippet ───────────────────────────────────────────────────
         rx.cond(
             AppState.has_challenge,
@@ -236,7 +227,6 @@ def _code_panel() -> rx.Component:
                 width="100%",
             ),
         ),
-
         # ── Answer input ───────────────────────────────────────────────────
         rx.cond(
             AppState.has_challenge,
@@ -248,7 +238,7 @@ def _code_panel() -> rx.Component:
                     color="#374151",
                 ),
                 rx.text(
-                    "Describe: what the vulnerability is, where exactly it appears in the code, "
+                    "Describe: what the vulnerability is, where exactly it appears in the code,  "
                     "why it is dangerous, and how an attacker could exploit it.",
                     font_size="0.8rem",
                     color="#9ca3af",
@@ -274,8 +264,8 @@ def _code_panel() -> rx.Component:
                         ),
                         rx.cond(
                             AppState.is_submitting,
-                            " Evaluating...",
-                            " Submit for Evaluation",
+                            "Evaluating...",
+                            "Submit for Evaluation",
                         ),
                         on_click=AppState.submit_answer,
                         disabled=AppState.is_submitting,
@@ -289,7 +279,6 @@ def _code_panel() -> rx.Component:
                 align="start",
             ),
         ),
-
         spacing="4",
         width="100%",
         align="start",

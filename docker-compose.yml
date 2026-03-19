@@ -27,7 +27,15 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-securedeviq}:${POSTGRES_PASSWORD:-securedeviq_secret}@db:5432/${POSTGRES_DB:-securedeviq}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      # AI provider selection — set AI_PROVIDER to "anthropic" or "qwen"
+      AI_PROVIDER: ${AI_PROVIDER:-anthropic}
+      # Anthropic (used when AI_PROVIDER=anthropic)
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
+      # Qwen / DashScope (used when AI_PROVIDER=qwen)
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      QWEN_MODEL: ${QWEN_MODEL:-qwen-plus}
+      QWEN_BASE_URL: ${QWEN_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}
       CORS_ORIGINS: "http://localhost:3000,http://frontend:3000"
     ports:
       - "8000:8000"

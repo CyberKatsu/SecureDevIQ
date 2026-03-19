@@ -1,26 +1,48 @@
 """
 app/services/ai_service.py
 ──────────────────────────
-All Anthropic API calls are routed through this module and ONLY this module.
+All LLM API calls are routed through this module.
 
-Two clearly-scoped public functions keep generation and evaluation completely
-separate:
+Architecture: provider abstraction
+───────────────────────────────────
+Both Anthropic and Qwen expose the same two operations to the rest of the app:
 
-  generate_challenge()  → uses CHALLENGE_GENERATION_SYSTEM_PROMPT
-  evaluate_submission() → uses CHALLENGE_EVALUATION_SYSTEM_PROMPT
+  generate_challenge()  → GeneratedChallenge
+  evaluate_submission() → ScoringResult
 
-Both functions are synchronous. When called from async FastAPI route handlers,
-wrap them with `await asyncio.to_thread(fn, ...)` to avoid blocking the event
-loop (see routes/challenges.py and routes/submissions.py for examples).
+The active provider is chosen by the AI_PROVIDER env var and instantiated
+once at module import via get_provider(). Switching providers requires only
+a one-line environment variable change — no code edits.
 
-Both return typed Pydantic models — never raw strings — so all downstream code
-can rely on validated, structured data.
+Provider implementations
+──────────────────────────
+  AnthropicProvider  — uses the official `anthropic` SDK (sync client,
+                        wrapped with asyncio.to_thread() at the route layer)
+  QwenProvider       — uses the `openai` SDK pointed at DashScope's
+                        OpenAI-compatible endpoint. Identical call pattern
+                        to AnthropicProvider; only the client construction
+                        and response extraction differ.
+
+Both implementations:
+  • Use the same system prompt constants from app/prompts/
+  • Parse Claude/Qwen's JSON response through _strip_fences() + json.loads()
+  • Return typed objects (GeneratedChallenge dataclass, ScoringResult Pydantic)
+  • Raise ValueError with a human-readable message on any parse/validation error
+
+Adding a new provider
+──────────────────────
+1. Subclass BaseAIProvider and implement _call(system, user) -> str
+2. Add the provider name to Settings.ai_provider Literal in config.py
+3. Register it in get_provider()
 """
 import json
 import logging
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from functools import lru_cache
 
 import anthropic
+from openai import OpenAI
 
 from app.config import get_settings
 from app.models import Difficulty, Language, VulnCategory
@@ -33,32 +55,13 @@ logger = logging.getLogger(__name__)
 MAX_TOKENS = 2048
 
 
-def _get_client() -> anthropic.Anthropic:
-    """Create a synchronous Anthropic client per-call (thread-safe)."""
-    return anthropic.Anthropic(api_key=get_settings().anthropic_api_key)
-
-
-def _strip_fences(text: str) -> str:
-    """
-    Strip markdown code fences that Claude occasionally wraps JSON in,
-    despite system prompt instructions to the contrary.
-    """
-    text = text.strip()
-    if text.startswith("```"):
-        lines = text.split("\n")
-        # Drop first line (```json or ```) and last line (```)
-        text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-    return text.strip()
-
-
-# ── Data class for generation output ─────────────────────────────────────────
+# ── Shared output type ────────────────────────────────────────────────────────
 
 @dataclass
 class GeneratedChallenge:
     """Typed container for a freshly generated challenge.
 
-    A dataclass rather than Pydantic model because it's internal to the
-    service layer; the route converts it to an ORM model before persisting.
+    Internal to the service layer — the route converts it to an ORM model.
     """
     title: str
     description: str
@@ -67,62 +70,30 @@ class GeneratedChallenge:
     reference_explanation: str
 
 
-# ── Challenge generation ──────────────────────────────────────────────────────
+# ── Shared utilities ──────────────────────────────────────────────────────────
 
-def generate_challenge(
-    language: Language,
-    difficulty: Difficulty,
-    vuln_category: VulnCategory | None = None,
-) -> GeneratedChallenge:
-    """
-    Call Claude to generate a new vulnerability challenge.
+def _strip_fences(text: str) -> str:
+    """Strip markdown code fences that LLMs occasionally wrap JSON in."""
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+    return text.strip()
 
-    Args:
-        language:      Target language for the code snippet.
-        difficulty:    Junior / Mid / Senior — affects subtlety.
-        vuln_category: If None, Claude picks the category freely.
 
-    Returns:
-        GeneratedChallenge with all fields populated.
-
-    Raises:
-        ValueError: If the API response cannot be parsed as valid JSON,
-                    or if the JSON is missing required fields.
-        anthropic.APIError: On network/API-level failures.
-    """
-    category_line = (
-        f"The vulnerability MUST be of category: **{vuln_category.value}**"
-        if vuln_category
-        else "Choose the most interesting vulnerability category for this scenario."
-    )
-
-    user_message = (
-        f"Generate a {difficulty.value}-difficulty security challenge.\n"
-        f"Language: {language.value}\n"
-        f"{category_line}\n"
-        "Respond with JSON only — no markdown fences, no preamble."
-    )
-
-    client = _get_client()
-    response = client.messages.create(
-        model=get_settings().anthropic_model,
-        max_tokens=MAX_TOKENS,
-        system=CHALLENGE_GENERATION_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_message}],
-    )
-
-    raw = _strip_fences(response.content[0].text)
-
+def _parse_generation(raw: str) -> GeneratedChallenge:
+    """Parse and validate a JSON generation response into GeneratedChallenge."""
+    clean = _strip_fences(raw)
     try:
-        data = json.loads(raw)
+        data = json.loads(clean)
     except json.JSONDecodeError as exc:
-        logger.error("generate_challenge: invalid JSON from Claude: %.500s", raw)
-        raise ValueError(f"Claude returned invalid JSON: {exc}") from exc
+        logger.error("generate_challenge: invalid JSON: %.500s", clean)
+        raise ValueError(f"Provider returned invalid JSON: {exc}") from exc
 
     required = {"title", "description", "code_snippet", "vuln_category", "reference_explanation"}
     missing = required - data.keys()
     if missing:
-        raise ValueError(f"Claude response missing fields: {missing}")
+        raise ValueError(f"Provider response missing fields: {missing}")
 
     return GeneratedChallenge(
         title=data["title"],
@@ -133,32 +104,43 @@ def generate_challenge(
     )
 
 
-# ── Submission evaluation ─────────────────────────────────────────────────────
+def _parse_evaluation(raw: str) -> ScoringResult:
+    """Parse and validate a JSON evaluation response into ScoringResult."""
+    clean = _strip_fences(raw)
+    try:
+        data = json.loads(clean)
+    except json.JSONDecodeError as exc:
+        logger.error("evaluate_submission: invalid JSON: %.500s", clean)
+        raise ValueError(f"Provider returned invalid JSON: {exc}") from exc
 
-def evaluate_submission(
+    # Pydantic validates score bounds (ge=0, le=10) and required fields
+    return ScoringResult(**data)
+
+
+def _build_generation_user_msg(
+    language: Language,
+    difficulty: Difficulty,
+    vuln_category: VulnCategory | None,
+) -> str:
+    category_line = (
+        f"The vulnerability MUST be of category: **{vuln_category.value}**"
+        if vuln_category
+        else "Choose the most interesting vulnerability category for this scenario."
+    )
+    return (
+        f"Generate a {difficulty.value}-difficulty security challenge.\n"
+        f"Language: {language.value}\n"
+        f"{category_line}\n"
+        "Respond with JSON only — no markdown fences, no preamble."
+    )
+
+
+def _build_evaluation_user_msg(
     code_snippet: str,
     reference_explanation: str,
     user_answer: str,
-) -> ScoringResult:
-    """
-    Call Claude to evaluate a user's vulnerability analysis.
-
-    The reference_explanation (stored at challenge-generation time) is
-    passed as ground truth, making scoring consistent regardless of when
-    or by whom the challenge is attempted.
-
-    Args:
-        code_snippet:          The challenge code the user was reviewing.
-        reference_explanation: The authoritative vulnerability description.
-        user_answer:           The trainee's submitted analysis text.
-
-    Returns:
-        ScoringResult (Pydantic-validated) with score, findings, explanation.
-
-    Raises:
-        ValueError: If Claude's response cannot be parsed or Pydantic rejects it.
-    """
-    user_message = (
+) -> str:
+    return (
         "## Code snippet under review\n"
         f"```\n{code_snippet}\n```\n\n"
         "## Ground-truth reference explanation\n"
@@ -168,21 +150,181 @@ def evaluate_submission(
         "Evaluate the trainee's answer and respond with JSON only."
     )
 
-    client = _get_client()
-    response = client.messages.create(
-        model=get_settings().anthropic_model,
-        max_tokens=MAX_TOKENS,
-        system=CHALLENGE_EVALUATION_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_message}],
+
+# ── Provider base class ───────────────────────────────────────────────────────
+
+class BaseAIProvider(ABC):
+    """Interface that every LLM provider must implement."""
+
+    @abstractmethod
+    def _call(self, system: str, user: str) -> str:
+        """Make a synchronous chat completion and return the raw text response."""
+
+    def generate_challenge(
+        self,
+        language: Language,
+        difficulty: Difficulty,
+        vuln_category: VulnCategory | None = None,
+    ) -> GeneratedChallenge:
+        """
+        Generate a vulnerability challenge snippet.
+
+        Synchronous — wrap with asyncio.to_thread() in async FastAPI routes.
+
+        Args:
+            language:      Target programming language.
+            difficulty:    Junior / Mid / Senior.
+            vuln_category: If None, the provider picks freely.
+
+        Returns:
+            GeneratedChallenge dataclass.
+
+        Raises:
+            ValueError: JSON parse failure or missing required fields.
+            Provider-specific exception: on network/auth errors.
+        """
+        user_msg = _build_generation_user_msg(language, difficulty, vuln_category)
+        raw = self._call(CHALLENGE_GENERATION_SYSTEM_PROMPT, user_msg)
+        return _parse_generation(raw)
+
+    def evaluate_submission(
+        self,
+        code_snippet: str,
+        reference_explanation: str,
+        user_answer: str,
+    ) -> ScoringResult:
+        """
+        Evaluate a trainee's vulnerability analysis against the ground truth.
+
+        Synchronous — wrap with asyncio.to_thread() in async FastAPI routes.
+
+        Args:
+            code_snippet:          The challenge code the trainee reviewed.
+            reference_explanation: Authoritative ground truth from generation.
+            user_answer:           The trainee's submitted analysis text.
+
+        Returns:
+            ScoringResult (Pydantic-validated): score, findings, explanation.
+
+        Raises:
+            ValueError: JSON parse failure or Pydantic validation error.
+        """
+        user_msg = _build_evaluation_user_msg(
+            code_snippet, reference_explanation, user_answer
+        )
+        raw = self._call(CHALLENGE_EVALUATION_SYSTEM_PROMPT, user_msg)
+        return _parse_evaluation(raw)
+
+
+# ── Anthropic provider ────────────────────────────────────────────────────────
+
+class AnthropicProvider(BaseAIProvider):
+    """
+    LLM provider backed by the Anthropic API.
+
+    Uses the official `anthropic` Python SDK with a synchronous client.
+    A new client is created per-call to be thread-safe when called via
+    asyncio.to_thread() under concurrent load.
+    """
+
+    def _call(self, system: str, user: str) -> str:
+        s = get_settings()
+        client = anthropic.Anthropic(api_key=s.anthropic_api_key)
+        response = client.messages.create(
+            model=s.anthropic_model,
+            max_tokens=MAX_TOKENS,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+        )
+        return response.content[0].text
+
+
+# ── Qwen provider ─────────────────────────────────────────────────────────────
+
+class QwenProvider(BaseAIProvider):
+    """
+    LLM provider backed by Alibaba Cloud's DashScope Qwen models.
+
+    DashScope exposes an OpenAI-compatible /chat/completions endpoint,
+    so we use the `openai` SDK with a custom base_url and API key.
+
+    Regional endpoints:
+      International (Singapore/US): https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+      China (Beijing):              https://dashscope.aliyuncs.com/compatible-mode/v1
+
+    The active base_url is configured via QWEN_BASE_URL in .env.
+
+    Qwen's chat/completions response structure differs from Anthropic's:
+      response.choices[0].message.content  (OpenAI-compatible)
+    vs.
+      response.content[0].text             (Anthropic native)
+
+    This difference is encapsulated here — the rest of the app is unaware of it.
+    """
+
+    def _call(self, system: str, user: str) -> str:
+        s = get_settings()
+        client = OpenAI(
+            api_key=s.dashscope_api_key,
+            base_url=s.qwen_base_url,
+        )
+        response = client.chat.completions.create(
+            model=s.qwen_model,
+            max_tokens=MAX_TOKENS,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+        return response.choices[0].message.content or ""
+
+
+# ── Provider factory ──────────────────────────────────────────────────────────
+
+@lru_cache(maxsize=1)
+def get_provider() -> BaseAIProvider:
+    """
+    Return the singleton provider instance for the configured AI_PROVIDER.
+
+    Cached so the provider is instantiated only once per process lifetime.
+    Tests clear this cache (via get_provider.cache_clear()) when monkeypatching
+    settings.
+
+    Raises:
+        ValueError: If AI_PROVIDER is set to an unrecognised value.
+    """
+    provider_name = get_settings().ai_provider
+    if provider_name == "anthropic":
+        logger.info("AI provider: Anthropic (%s)", get_settings().anthropic_model)
+        return AnthropicProvider()
+    if provider_name == "qwen":
+        logger.info("AI provider: Qwen (%s via DashScope)", get_settings().qwen_model)
+        return QwenProvider()
+    raise ValueError(
+        f"Unknown AI_PROVIDER '{provider_name}'. "
+        "Valid values: 'anthropic', 'qwen'."
     )
 
-    raw = _strip_fences(response.content[0].text)
 
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        logger.error("evaluate_submission: invalid JSON from Claude: %.500s", raw)
-        raise ValueError(f"Claude returned invalid JSON: {exc}") from exc
+# ── Public API (used by route handlers) ───────────────────────────────────────
+# These module-level functions delegate to the active provider, keeping the
+# call sites in routes/challenges.py and routes/submissions.py unchanged.
 
-    # Pydantic validates score bounds (ge=0, le=10) and required fields
-    return ScoringResult(**data)
+def generate_challenge(
+    language: Language,
+    difficulty: Difficulty,
+    vuln_category: VulnCategory | None = None,
+) -> GeneratedChallenge:
+    """Delegate to the active provider's generate_challenge()."""
+    return get_provider().generate_challenge(language, difficulty, vuln_category)
+
+
+def evaluate_submission(
+    code_snippet: str,
+    reference_explanation: str,
+    user_answer: str,
+) -> ScoringResult:
+    """Delegate to the active provider's evaluate_submission()."""
+    return get_provider().evaluate_submission(
+        code_snippet, reference_explanation, user_answer
+    )

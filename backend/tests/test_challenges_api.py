@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tests.conftest import MOCK_GENERATION_JSON
+from tests.conftest import MOCK_GENERATION_JSON, MOCK_EVALUATION_JSON
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

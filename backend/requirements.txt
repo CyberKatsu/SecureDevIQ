@@ -11,13 +11,16 @@ alembic==1.14.1
 pydantic==2.11.1
 pydantic-settings==2.8.1
 
-# ── AI ─────────────────────────────────────────────────────────────────────────
+# ── AI providers ───────────────────────────────────────────────────────────────
+# Anthropic SDK (used when AI_PROVIDER=anthropic)
 anthropic==0.84.0
+# OpenAI-compatible SDK — also used for Qwen/DashScope (AI_PROVIDER=qwen)
+openai==1.75.0
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
-# python-jose for JWT encoding/decoding; passlib[bcrypt] for password hashing
 python-jose[cryptography]==3.3.0
 bcrypt==4.2.1
+python-multipart==0.0.20
 
 # ── HTTP client ────────────────────────────────────────────────────────────────
 httpx==0.28.1
@@ -26,5 +29,4 @@ httpx==0.28.1
 pytest==8.3.5
 pytest-asyncio==0.24.0
 pytest-mock==3.14.0
-# aiosqlite: in-memory async SQLite for tests (no real Postgres needed in CI)
 aiosqlite==0.20.0
