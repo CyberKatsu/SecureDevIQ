@@ -1,5 +1,5 @@
 """
-pages/challenge.py  —  Challenge view (route: /challenge)
+pages/challenge.py — Challenge view (route: /challenge)
 Layout:
 ┌─────────────────────────────────────────────┐
 │  Navbar                                     │
@@ -15,6 +15,7 @@ import reflex as rx
 from securedeviq.components.navbar import navbar
 from securedeviq.state import AppState
 
+# Clean data without any trailing whitespace
 LANGUAGES = ["python", "sql", "bash"]
 DIFFICULTIES = ["junior", "mid", "senior"]
 CATEGORIES = [
@@ -26,30 +27,27 @@ CATEGORIES = [
     ("hardcoded_secrets", "Hardcoded Secrets"),
 ]
 
-# Create a mapping for display purposes
+# Create label lookup for displaying nicely
 CATEGORY_LABELS = {key: label for key, label in CATEGORIES}
 
 
 def challenge_page() -> rx.Component:
-    return rx.box(
-        navbar(),
+    return rx.cond(
+        AppState.is_authenticated,
         rx.box(
-            rx.hstack(
-                # ── Left panel: settings ───────────────────────────────────
-                _settings_panel(),
-                # ── Right panel: code + answer ──────────────────────────────
-                _code_panel(),
-                spacing="6",
-                align="start",
-                width="100%",
+            navbar(),
+            rx.box(
+                rx.hstack(
+                    _settings_panel(),
+                    _code_panel(),
+                    spacing="6",
+                    align="start",
+                    width="100%",
+                ),
+                max_width="72rem",
+                margin="0 auto",
+                padding="2rem",
             ),
-            max_width="72rem",
-            margin="0 auto",
-            padding="2rem",
-        ),
-        on_mount=rx.cond(
-            ~AppState.is_authenticated,
-            rx.redirect("/"),
         ),
     )
 
@@ -82,13 +80,11 @@ def _settings_panel() -> rx.Component:
             ),
             rx.vstack(
                 rx.text("Vulnerability Category", font_size="0.85rem", color="#6b7280"),
+                # Pass only labels for display, handle key-value in State
                 rx.select(
-                    [
-                        rx.select.option(label=label, value=key)
-                        for key, label in CATEGORIES
-                    ],
-                    value=AppState.selected_category,
-                    on_change=AppState.set_category,
+                    [label for _, label in CATEGORIES],
+                    value=AppState.get_category_label,
+                    on_change=AppState.handle_category_selection,
                     width="100%",
                 ),
                 spacing="1",
@@ -119,7 +115,6 @@ def _settings_panel() -> rx.Component:
                     variant="soft",
                 ),
             ),
-            # ── Difficulty legend ──────────────────────────────────────────
             rx.divider(),
             rx.vstack(
                 rx.text("Difficulty guide", font_size="0.8rem", font_weight="600", color="#374151"),
@@ -150,7 +145,6 @@ def _difficulty_badge(level: str, colour: str, description: str) -> rx.Component
 
 def _code_panel() -> rx.Component:
     return rx.vstack(
-        # ── Challenge metadata ─────────────────────────────────────────────
         rx.cond(
             AppState.has_challenge,
             rx.card(
@@ -167,7 +161,10 @@ def _code_panel() -> rx.Component:
                             variant="outline",
                         ),
                         rx.badge(
-                            AppState.current_challenge.get("vuln_category", "").replace("_", " "),
+                            CATEGORY_LABELS.get(
+                                AppState.current_challenge.get("vuln_category", ""),
+                                AppState.current_challenge.get("vuln_category", ""),
+                            ),
                             color_scheme="orange",
                             variant="soft",
                         ),
@@ -188,7 +185,6 @@ def _code_panel() -> rx.Component:
                 padding="1.25rem",
             ),
         ),
-        # ── Code snippet ───────────────────────────────────────────────────
         rx.cond(
             AppState.has_challenge,
             rx.vstack(
@@ -209,7 +205,6 @@ def _code_panel() -> rx.Component:
                 width="100%",
                 align="start",
             ),
-            # Placeholder when no challenge loaded
             rx.center(
                 rx.vstack(
                     rx.icon("shield", size=48, color="#d1d5db"),
@@ -227,7 +222,6 @@ def _code_panel() -> rx.Component:
                 width="100%",
             ),
         ),
-        # ── Answer input ───────────────────────────────────────────────────
         rx.cond(
             AppState.has_challenge,
             rx.vstack(
@@ -247,7 +241,7 @@ def _code_panel() -> rx.Component:
                     placeholder="e.g. On line 10, the username parameter is interpolated directly into the SQL query using an f-string. This allows SQL injection because...",
                     value=AppState.user_answer,
                     on_change=AppState.set_answer,
-                    rows=7,
+                    rows="7",
                     width="100%",
                 ),
                 rx.cond(

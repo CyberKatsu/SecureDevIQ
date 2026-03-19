@@ -28,42 +28,42 @@ DIFFICULTY_COLOURS = {
 
 
 def dashboard_page() -> rx.Component:
-    return rx.box(
-        navbar(),
+    return rx.cond(
+        AppState.is_authenticated,
         rx.box(
-            rx.vstack(
-                rx.hstack(
-                    rx.heading("Your Progress", size="6"),
-                    rx.spacer(),
-                    rx.button(
-                        rx.icon("refresh-cw", size=16),
-                        " Refresh",
-                        on_click=AppState.load_dashboard,
-                        variant="outline",
-                        color_scheme="gray",
-                        size="2",
+            navbar(),
+            rx.box(
+                rx.vstack(
+                    rx.hstack(
+                        rx.heading("Your Progress", size="6"),
+                        rx.spacer(),
+                        rx.button(
+                            rx.icon("refresh-cw", size=16),
+                            " Refresh",
+                            on_click=AppState.load_dashboard,
+                            variant="outline",
+                            color_scheme="gray",
+                            size="2",
+                        ),
+                        width="100%",
+                        align="center",
                     ),
+
+                    rx.cond(
+                        AppState.is_loading_dashboard,
+                        rx.center(rx.spinner(size="3"), padding_y="4rem"),
+                        _dashboard_content(),
+                    ),
+
+                    spacing="6",
                     width="100%",
-                    align="center",
                 ),
-
-                rx.cond(
-                    AppState.is_loading_dashboard,
-                    rx.center(rx.spinner(size="3"), padding_y="4rem"),
-                    _dashboard_content(),
-                ),
-
-                spacing="6",
-                width="100%",
+                max_width="72rem",
+                margin="0 auto",
+                padding="2rem",
             ),
-            max_width="72rem",
-            margin="0 auto",
-            padding="2rem",
+            on_mount=AppState.load_dashboard,
         ),
-        on_mount=[
-            rx.cond(~AppState.is_authenticated, rx.redirect("/")),
-            AppState.load_dashboard,
-        ],
     )
 
 

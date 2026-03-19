@@ -15,33 +15,32 @@ from securedeviq.state import AppState
 
 
 def results_page() -> rx.Component:
-    return rx.box(
-        navbar(),
+    return rx.cond(
+        AppState.is_authenticated,
         rx.box(
-            rx.cond(
-                AppState.has_result,
-                _results_content(),
-                # Guard: redirect if arriving without a result
-                rx.center(
-                    rx.vstack(
-                        rx.text("No result to display.", color="#6b7280"),
-                        rx.link(
-                            rx.button("Go to Challenge", color_scheme="indigo"),
-                            href="/challenge",
+            navbar(),
+            rx.box(
+                rx.cond(
+                    AppState.has_result,
+                    _results_content(),
+                    # Guard: redirect if arriving without a result
+                    rx.center(
+                        rx.vstack(
+                            rx.text("No result to display.", color="#6b7280"),
+                            rx.link(
+                                rx.button("Go to Challenge", color_scheme="indigo"),
+                                href="/challenge",
+                            ),
+                            spacing="4",
+                            align="center",
                         ),
-                        spacing="4",
-                        align="center",
+                        padding_y="6rem",
                     ),
-                    padding_y="6rem",
                 ),
+                max_width="48rem",
+                margin="0 auto",
+                padding="2rem",
             ),
-            max_width="48rem",
-            margin="0 auto",
-            padding="2rem",
-        ),
-        on_mount=rx.cond(
-            ~AppState.is_authenticated,
-            rx.redirect("/"),
         ),
     )
 
@@ -67,28 +66,12 @@ def _results_content() -> rx.Component:
                     width="6rem",
                     height="6rem",
                     border_radius="50%",
-                    border=rx.cond(
-                        AppState.submission_result.get("score", 0) >= 8,
-                        "4px solid #22c55e",
-                        rx.cond(
-                            AppState.submission_result.get("score", 0) >= 5,
-                            "4px solid #f97316",
-                            "4px solid #ef4444",
-                        ),
-                    ),
+                    border=AppState.score_border_color,
                 ),
                 rx.vstack(
                     rx.heading("Analysis Complete", size="5"),
                     rx.text(
-                        rx.cond(
-                            AppState.submission_result.get("score", 0) >= 8,
-                            "Excellent work! You've got a sharp eye for this vulnerability.",
-                            rx.cond(
-                                AppState.submission_result.get("score", 0) >= 5,
-                                "Good effort — you identified the key issue but missed some details.",
-                                "Keep practising — review the explanation below carefully.",
-                            ),
-                        ),
+                        AppState.score_feedback_message,
                         color="#6b7280",
                         font_size="0.9rem",
                     ),

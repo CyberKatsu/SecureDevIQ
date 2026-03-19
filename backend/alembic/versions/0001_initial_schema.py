@@ -18,24 +18,25 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # ── Enums ──────────────────────────────────────────────────────────────────
-    difficulty_enum = postgresql.ENUM(
-        "junior", "mid", "senior", name="difficulty", create_type=False
-    )
-    language_enum = postgresql.ENUM(
-        "python", "sql", "bash", name="language", create_type=False
-    )
-    vuln_category_enum = postgresql.ENUM(
-        "prompt_injection",
-        "memory_issues",
-        "insecure_defaults",
-        "missing_sanitisation",
-        "hardcoded_secrets",
-        name="vulncategory",
-        create_type=False,
-    )
-
-    for enum in (difficulty_enum, language_enum, vuln_category_enum):
-        enum.create(op.get_bind(), checkfirst=True)
+    # Create enums with try-except to handle cases where they already exist
+    try:
+        op.execute("CREATE TYPE difficulty AS ENUM ('junior', 'mid', 'senior')")
+    except Exception:
+        pass  # Type already exists
+    
+    try:
+        op.execute("CREATE TYPE language AS ENUM ('python', 'sql', 'bash')")
+    except Exception:
+        pass  # Type already exists
+    
+    try:
+        op.execute(
+            "CREATE TYPE vulncategory AS ENUM ("
+            "'prompt_injection', 'memory_issues', 'insecure_defaults', "
+            "'missing_sanitisation', 'hardcoded_secrets')"
+        )
+    except Exception:
+        pass  # Type already exists
 
     # ── users ─────────────────────────────────────────────────────────────────
     op.create_table(
@@ -60,14 +61,15 @@ def upgrade() -> None:
         sa.Column("title", sa.String(256), nullable=False),
         sa.Column("description", sa.Text(), nullable=False),
         sa.Column("code_snippet", sa.Text(), nullable=False),
-        sa.Column("language", sa.Enum("python", "sql", "bash", name="language"), nullable=False),
-        sa.Column("difficulty", sa.Enum("junior", "mid", "senior", name="difficulty"), nullable=False),
+        sa.Column("language", postgresql.ENUM("python", "sql", "bash", name="language", create_type=False), nullable=False),
+        sa.Column("difficulty", postgresql.ENUM("junior", "mid", "senior", name="difficulty", create_type=False), nullable=False),
         sa.Column(
             "vuln_category",
-            sa.Enum(
+            postgresql.ENUM(
                 "prompt_injection", "memory_issues", "insecure_defaults",
                 "missing_sanitisation", "hardcoded_secrets",
                 name="vulncategory",
+                create_type=False,
             ),
             nullable=False,
         ),

@@ -20,6 +20,19 @@ from typing import Optional
 
 import httpx
 import reflex as rx
+from typing import Optional, Dict, Any
+
+CATEGORIES = [
+    ("", "AI picks"),
+    ("prompt_injection", "Prompt Injection"),
+    ("memory_issues", "Memory Issues"),
+    ("insecure_defaults", "Insecure Defaults"),
+    ("missing_sanitisation", "Missing Sanitisation"),
+    ("hardcoded_secrets", "Hardcoded Secrets"),
+]
+
+CATEGORY_KEY_TO_LABEL = {key: label for key, label in CATEGORIES}
+CATEGORY_LABEL_TO_KEY = {label: key for key, label in CATEGORIES}
 
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
 
@@ -68,6 +81,24 @@ class AppState(rx.State):
         if score >= 5:
             return "orange"
         return "red"
+
+    @rx.var
+    def score_border_color(self) -> str:
+        score = self.submission_result.get("score", 0)
+        if score >= 8:
+            return "4px solid #22c55e"
+        if score >= 5:
+            return "4px solid #f97316"
+        return "4px solid #ef4444"
+
+    @rx.var
+    def score_feedback_message(self) -> str:
+        score = self.submission_result.get("score", 0)
+        if score >= 8:
+            return "Excellent work! You've got a sharp eye for this vulnerability."
+        if score >= 5:
+            return "Good effort — you identified the key issue but missed some details."
+        return "Keep practising — review the explanation below carefully."
 
     @rx.var
     def correct_findings_list(self) -> list[str]:
@@ -135,6 +166,16 @@ class AppState(rx.State):
 
     def set_answer(self, value: str):
         self.user_answer = value
+
+    @rx.var
+    def get_category_label(self) -> str:
+        """Return the display label for the currently selected category."""
+        return CATEGORY_KEY_TO_LABEL.get(self.selected_category, "AI picks")
+
+    def handle_category_selection(self, label: str):
+        """Convert a label to its key and set the category."""
+        key = CATEGORY_LABEL_TO_KEY.get(label, "")
+        self.set_category(key)
 
     async def load_challenge(self):
         if not self.is_authenticated:
