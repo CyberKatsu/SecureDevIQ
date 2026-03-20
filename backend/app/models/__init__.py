@@ -87,10 +87,29 @@ class Challenge(Base):
     title: Mapped[str] = mapped_column(String(256), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     code_snippet: Mapped[str] = mapped_column(Text, nullable=False)
-    language: Mapped[Language] = mapped_column(Enum(Language), nullable=False)
-    difficulty: Mapped[Difficulty] = mapped_column(Enum(Difficulty), nullable=False)
+    language: Mapped[Language] = mapped_column(
+        Enum(
+            Language,
+            name="language",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
+    )
+    difficulty: Mapped[Difficulty] = mapped_column(
+        Enum(
+            Difficulty,
+            name="difficulty",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
+    )
     vuln_category: Mapped[VulnCategory] = mapped_column(
-        Enum(VulnCategory), nullable=False
+        Enum(
+            VulnCategory,
+            name="vulncategory",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
     )
     # Ground-truth explanation stored for the evaluator prompt
     reference_explanation: Mapped[str] = mapped_column(Text, nullable=False)

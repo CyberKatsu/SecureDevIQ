@@ -92,7 +92,7 @@ def _results_content() -> rx.Component:
             rx.card(
                 rx.vstack(
                     rx.hstack(
-                        rx.icon("check-circle", size=18, color="#22c55e"),
+                        rx.icon("check_check", size=18, color="#22c55e"),
                         rx.text("What you got right", font_weight="600", color="#166534"),
                         spacing="2",
                     ),
@@ -127,7 +127,7 @@ def _results_content() -> rx.Component:
             rx.card(
                 rx.vstack(
                     rx.hstack(
-                        rx.icon("alert-circle", size=18, color="#f97316"),
+                        rx.icon("message_circle_warning", size=18, color="#f97316"),
                         rx.text("What you missed", font_weight="600", color="#9a3412"),
                         spacing="2",
                     ),

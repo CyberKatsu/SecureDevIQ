@@ -16,11 +16,11 @@ Design decisions:
   Reflex can serialise them to the frontend without surprises.
 """
 import os
-from typing import Optional
+import json
+from typing import Any, Optional
 
 import httpx
 import reflex as rx
-from typing import Optional, Dict, Any
 
 CATEGORIES = [
     ("", "AI picks"),
@@ -63,6 +63,10 @@ class AppState(rx.State):
     # ── Dashboard ─────────────────────────────────────────────────────────────
     dashboard_data: dict = {}
     is_loading_dashboard: bool = False
+    dashboard_total_attempts: int = 0
+    dashboard_overall_average_score: float = 0.0
+    dashboard_challenges_completed: int = 0
+    dashboard_total_challenges_available: int = 0
 
     # ── Computed helpers ──────────────────────────────────────────────────────
     @rx.var
@@ -72,6 +76,21 @@ class AppState(rx.State):
     @rx.var
     def has_result(self) -> bool:
         return bool(self.submission_result)
+
+    @rx.var
+    def dashboard_category_breakdown(self) -> list[dict[str, Any]]:
+        data = self.dashboard_data.get("category_breakdown", [])
+        return data if isinstance(data, list) else []
+
+    @rx.var
+    def dashboard_difficulty_breakdown(self) -> list[dict[str, Any]]:
+        data = self.dashboard_data.get("difficulty_breakdown", [])
+        return data if isinstance(data, list) else []
+
+    @rx.var
+    def dashboard_recent_submissions(self) -> list[dict[str, Any]]:
+        data = self.dashboard_data.get("recent_submissions", [])
+        return data if isinstance(data, list) else []
 
     @rx.var
     def score_colour(self) -> str:
@@ -204,7 +223,16 @@ class AppState(rx.State):
         if resp.status_code == 201:
             self.current_challenge = resp.json()
         else:
-            self.challenge_error = resp.json().get("detail", "Failed to generate challenge")
+            detail = "Failed to generate challenge"
+            try:
+                payload = resp.json()
+                if isinstance(payload, dict):
+                    detail = payload.get("detail", detail)
+            except json.JSONDecodeError:
+                body_text = (resp.text or "").strip()
+                if body_text:
+                    detail = body_text
+            self.challenge_error = detail
 
     # ── Submission handlers ───────────────────────────────────────────────────
     async def submit_answer(self):
@@ -242,4 +270,9 @@ class AppState(rx.State):
             )
         self.is_loading_dashboard = False
         if resp.status_code == 200:
-            self.dashboard_data = resp.json()
+            data = resp.json()
+            self.dashboard_data = data
+            self.dashboard_total_attempts = int(data.get("total_attempts", 0) or 0)
+            self.dashboard_overall_average_score = float(data.get("overall_average_score", 0.0) or 0.0)
+            self.dashboard_challenges_completed = int(data.get("challenges_completed", 0) or 0)
+            self.dashboard_total_challenges_available = int(data.get("total_challenges_available", 0) or 0)

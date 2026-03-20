@@ -13,7 +13,7 @@ from securedeviq.pages.dashboard import dashboard_page
 
 app = rx.App(
     theme=rx.theme(
-        appearance="light",
+        appearance="inherit",
         accent_color="indigo",
         radius="medium",
     ),

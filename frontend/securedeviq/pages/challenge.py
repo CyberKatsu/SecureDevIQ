@@ -62,6 +62,7 @@ def _settings_panel() -> rx.Component:
                     LANGUAGES,
                     value=AppState.selected_language,
                     on_change=AppState.set_language,
+                    disabled=AppState.is_loading_challenge,
                     width="100%",
                 ),
                 spacing="1",
@@ -73,6 +74,7 @@ def _settings_panel() -> rx.Component:
                     DIFFICULTIES,
                     value=AppState.selected_difficulty,
                     on_change=AppState.set_difficulty,
+                    disabled=AppState.is_loading_challenge,
                     width="100%",
                 ),
                 spacing="1",
@@ -85,6 +87,7 @@ def _settings_panel() -> rx.Component:
                     [label for _, label in CATEGORIES],
                     value=AppState.get_category_label,
                     on_change=AppState.handle_category_selection,
+                    disabled=AppState.is_loading_challenge,
                     width="100%",
                 ),
                 spacing="1",
@@ -108,6 +111,17 @@ def _settings_panel() -> rx.Component:
                 variant="solid",
             ),
             rx.cond(
+                AppState.is_loading_challenge,
+                rx.callout(
+                    "Generating your challenge. This can take a few seconds...",
+                    icon="loader_circle",
+                    color_scheme="indigo",
+                    variant="soft",
+                    width="100%",
+                ),
+                rx.fragment(),
+            ),
+            rx.cond(
                 AppState.challenge_error != "",
                 rx.callout(
                     AppState.challenge_error,
@@ -125,26 +139,63 @@ def _settings_panel() -> rx.Component:
                 width="100%",
             ),
             spacing="4",
-            width="16rem",
+            width="100%",
             align="start",
         ),
         padding="1.25rem",
-        width="16rem",
+        width="18rem",
+        max_width="100%",
         flex_shrink="0",
+        max_height="calc(100vh - 8rem)",
+        overflow_y="auto",
     )
 
 
 def _difficulty_badge(level: str, colour: str, description: str) -> rx.Component:
     return rx.hstack(
         rx.badge(level, color_scheme=colour, variant="soft"),
-        rx.text(description, font_size="0.75rem", color="#6b7280"),
+        rx.text(
+            description,
+            font_size="0.75rem",
+            color="#6b7280",
+            white_space="normal",
+            word_break="break-word",
+            flex="1",
+            min_width="0",
+        ),
         spacing="2",
-        align="center",
+        align="start",
+        width="100%",
+        min_width="0",
     )
 
 
 def _code_panel() -> rx.Component:
     return rx.vstack(
+        rx.cond(
+            AppState.is_loading_challenge,
+            rx.card(
+                rx.vstack(
+                    rx.hstack(
+                        rx.spinner(size="3"),
+                        rx.text("Building a new challenge...", font_weight="600"),
+                        spacing="3",
+                        align="center",
+                    ),
+                    rx.text(
+                        "Selecting vulnerability pattern, drafting code, and preparing explanation.",
+                        color="#6b7280",
+                        font_size="0.9rem",
+                    ),
+                    spacing="3",
+                    align="start",
+                    width="100%",
+                ),
+                width="100%",
+                padding="1.25rem",
+            ),
+            rx.fragment(),
+        ),
         rx.cond(
             AppState.has_challenge,
             rx.card(

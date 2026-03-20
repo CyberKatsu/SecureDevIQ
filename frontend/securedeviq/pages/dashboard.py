@@ -74,26 +74,26 @@ def _dashboard_content() -> rx.Component:
             _stat_card(
                 "target",
                 "Total Attempts",
-                AppState.dashboard_data.get("total_attempts", 0),
+                AppState.dashboard_total_attempts,
                 "#6366f1",
             ),
             _stat_card(
                 "star",
                 "Avg Score",
-                AppState.dashboard_data.get("overall_average_score", 0.0),
+                AppState.dashboard_overall_average_score,
                 "#f59e0b",
                 suffix=" / 10",
             ),
             _stat_card(
-                "check-circle",
+                "check_check",
                 "Challenges Done",
-                AppState.dashboard_data.get("challenges_completed", 0),
+                AppState.dashboard_challenges_completed,
                 "#22c55e",
             ),
             _stat_card(
                 "library",
                 "Available",
-                AppState.dashboard_data.get("total_challenges_available", 0),
+                AppState.dashboard_total_challenges_available,
                 "#0ea5e9",
             ),
             columns="4",
@@ -106,11 +106,11 @@ def _dashboard_content() -> rx.Component:
             rx.vstack(
                 rx.text("Performance by Vulnerability Category", font_weight="600", font_size="1rem"),
                 rx.cond(
-                    AppState.dashboard_data.get("category_breakdown", []) == [],
+                    AppState.dashboard_category_breakdown == [],
                     rx.text("No data yet — complete some challenges!", color="#9ca3af", font_size="0.9rem"),
                     rx.vstack(
                         rx.foreach(
-                            AppState.dashboard_data.get("category_breakdown", []),
+                            AppState.dashboard_category_breakdown,
                             _category_row,
                         ),
                         spacing="3",
@@ -130,11 +130,11 @@ def _dashboard_content() -> rx.Component:
             rx.vstack(
                 rx.text("Performance by Difficulty", font_weight="600", font_size="1rem"),
                 rx.cond(
-                    AppState.dashboard_data.get("difficulty_breakdown", []) == [],
+                    AppState.dashboard_difficulty_breakdown == [],
                     rx.text("No data yet — complete some challenges!", color="#9ca3af", font_size="0.9rem"),
                     rx.grid(
                         rx.foreach(
-                            AppState.dashboard_data.get("difficulty_breakdown", []),
+                            AppState.dashboard_difficulty_breakdown,
                             _difficulty_card,
                         ),
                         columns="3",
@@ -155,7 +155,7 @@ def _dashboard_content() -> rx.Component:
             rx.vstack(
                 rx.text("Recent Submissions", font_weight="600", font_size="1rem"),
                 rx.cond(
-                    AppState.dashboard_data.get("recent_submissions", []) == [],
+                    AppState.dashboard_recent_submissions == [],
                     rx.text("No submissions yet.", color="#9ca3af", font_size="0.9rem"),
                     rx.table.root(
                         rx.table.header(
@@ -167,7 +167,7 @@ def _dashboard_content() -> rx.Component:
                         ),
                         rx.table.body(
                             rx.foreach(
-                                AppState.dashboard_data.get("recent_submissions", []),
+                                AppState.dashboard_recent_submissions,
                                 _submission_row,
                             ),
                         ),
@@ -205,7 +205,12 @@ def _stat_card(icon: str, label: str, value, colour: str, suffix: str = "") -> r
     return rx.card(
         rx.vstack(
             rx.icon(icon, size=24, color=colour),
-            rx.text(str(value) + suffix, font_size="2rem", font_weight="700", color=colour),
+            rx.text(value, font_size="2rem", font_weight="700", color=colour),
+            rx.cond(
+                suffix != "",
+                rx.text(suffix, font_size="0.8rem", color=colour),
+                rx.fragment(),
+            ),
             rx.text(label, font_size="0.8rem", color="#6b7280"),
             spacing="1",
             align="center",
@@ -216,24 +221,19 @@ def _stat_card(icon: str, label: str, value, colour: str, suffix: str = "") -> r
 
 
 def _category_row(item: dict) -> rx.Component:
-    cat = item.get("category", "")
-    avg = item.get("average_score", 0.0)
-    attempts = item.get("attempts", 0)
+    cat = item["category"]
+    avg = item["average_score"]
+    attempts = item["attempts"]
     return rx.hstack(
         rx.badge(
-            cat.replace("_", " "),
-            color_scheme=CATEGORY_COLOURS.get(cat, "gray"),
+            cat,
+            color_scheme="gray",
             variant="soft",
             min_width="12rem",
         ),
-        rx.progress(
-            value=avg * 10,  # 0–100
-            max=100,
-            color_scheme=CATEGORY_COLOURS.get(cat, "gray"),
-            flex="1",
-        ),
-        rx.text(f"{avg}/10", font_size="0.85rem", font_weight="600", min_width="3rem"),
-        rx.text(f"({attempts} attempt{'s' if attempts != 1 else ''})", font_size="0.75rem", color="#9ca3af"),
+        rx.spacer(),
+        rx.text(avg, font_size="0.85rem", font_weight="600", min_width="3rem"),
+        rx.text(attempts, font_size="0.75rem", color="#9ca3af"),
         spacing="4",
         width="100%",
         align="center",
@@ -241,16 +241,15 @@ def _category_row(item: dict) -> rx.Component:
 
 
 def _difficulty_card(item: dict) -> rx.Component:
-    diff = item.get("difficulty", "")
-    avg = item.get("average_score", 0.0)
-    attempts = item.get("attempts", 0)
-    colour = DIFFICULTY_COLOURS.get(diff, "gray")
+    diff = item["difficulty"]
+    avg = item["average_score"]
+    attempts = item["attempts"]
     return rx.card(
         rx.vstack(
-            rx.badge(diff, color_scheme=colour, variant="soft"),
-            rx.text(f"{avg}", font_size="1.75rem", font_weight="700", color=colour),
+            rx.badge(diff, color_scheme="gray", variant="soft"),
+            rx.text(avg, font_size="1.75rem", font_weight="700", color="#6b7280"),
             rx.text("/ 10 avg", font_size="0.75rem", color="#9ca3af"),
-            rx.text(f"{attempts} attempt{'s' if attempts != 1 else ''}", font_size="0.8rem", color="#6b7280"),
+            rx.text(attempts, font_size="0.8rem", color="#6b7280"),
             spacing="1",
             align="center",
         ),
@@ -261,20 +260,19 @@ def _difficulty_card(item: dict) -> rx.Component:
 
 
 def _submission_row(sub: dict) -> rx.Component:
-    score = sub.get("score", 0) or 0
-    colour = "green" if score >= 8 else ("orange" if score >= 5 else "red")
+    score = sub["score"]
     return rx.table.row(
         rx.table.cell(
             rx.text(
-                sub.get("submitted_at", "")[:10],  # YYYY-MM-DD
+                sub["submitted_at"],
                 font_size="0.85rem",
                 color="#6b7280",
             ),
         ),
         rx.table.cell(
-            rx.badge(f"{score}/10", color_scheme=colour, variant="soft"),
+            rx.badge(score, color_scheme="gray", variant="soft"),
         ),
         rx.table.cell(
-            rx.text(f"#{sub.get('attempt_number', 1)}", font_size="0.85rem", color="#6b7280"),
+            rx.text(sub["attempt_number"], font_size="0.85rem", color="#6b7280"),
         ),
     )

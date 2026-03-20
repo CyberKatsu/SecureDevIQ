@@ -1,4 +1,4 @@
-version: "3.11"
+#version: "3.11"
 
 services:
   # ── PostgreSQL database ────────────────────────────────────────────────────
@@ -45,7 +45,12 @@ services:
     volumes:
       - ./backend:/app
     command: >
-      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+      sh -c "
+      until getent hosts db > /dev/null 2>&1; do
+        echo 'Waiting for db DNS...';
+        sleep 1;
+      done;
+      alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
   # ── Reflex frontend ────────────────────────────────────────────────────────
   frontend:
@@ -62,7 +67,7 @@ services:
       - backend
     volumes:
       - ./frontend:/app
-    command: reflex run --env prod
+    command: reflex run --env dev --frontend-port 3000 --backend-host 0.0.0.0 --backend-port 8001
 
 volumes:
   postgres_data:

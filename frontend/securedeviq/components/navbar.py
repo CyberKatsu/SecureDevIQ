@@ -27,6 +27,7 @@ def navbar() -> rx.Component:
                     rx.button("Dashboard", variant="ghost", color_scheme="indigo"),
                     href="/dashboard",
                 ),
+                rx.color_mode.button(),
                 rx.button(
                     "Logout",
                     variant="ghost",
@@ -39,7 +40,7 @@ def navbar() -> rx.Component:
         position="sticky",
         top="0",
         z_index="100",
-        bg="white",
+        bg=rx.color_mode_cond("white", "#0b1020"),
         border_bottom="1px solid #e5e7eb",
         padding_x="2rem",
         padding_y="0.75rem",
