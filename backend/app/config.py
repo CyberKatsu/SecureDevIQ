@@ -66,11 +66,20 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins_list(self) -> list[str]:
-        return [o.strip() for o in self.cors_origins.split(",")]
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     @model_validator(mode="after")
     def validate_provider_key(self) -> "Settings":
         """Ensure the API key for the active provider is set."""
+        # Prevent accidental startup with insecure fallback secret.
+        if self.secret_key == "change-me-in-production-use-openssl-rand-hex-32":
+            raise ValueError(
+                "SECRET_KEY must be set to a strong random value. "
+                "Generate one with: openssl rand -hex 32"
+            )
+        if len(self.secret_key) < 32:
+            raise ValueError("SECRET_KEY must be at least 32 characters long.")
+
         if self.ai_provider == "anthropic" and not self.anthropic_api_key:
             raise ValueError(
                 "AI_PROVIDER=anthropic requires ANTHROPIC_API_KEY to be set."
