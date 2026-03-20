@@ -22,3 +22,4 @@ frontend/.reflex/
 Thumbs.db
 .vscode/
 .idea/
+.env
