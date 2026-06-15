@@ -1,0 +1,30 @@
+version: "3.11"
+
+# Windows-specific Docker Compose configuration
+# Use with: docker compose -f docker-compose.yml -f docker-compose.windows.yml up
+
+# This override removes volume mounts which can cause issues on Windows Docker Desktop
+# The images will contain the code from the build time (no live reload on Windows)
+
+services:
+  db:
+    # No changes needed for db
+    image: postgres:16-alpine
+
+  backend:
+    # Remove the problematic volumes mount for Windows
+    volumes: []
+    # Rebuild code into image instead of mounting
+    command: >
+      sh -c "
+      until getent hosts db > /dev/null 2>&1; do
+        echo 'Waiting for db DNS...';
+        sleep 1;
+      done;
+      alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  frontend:
+    # Remove the problematic volumes mount for Windows
+    volumes: []
+    # Rebuild code into image instead of mounting
+    command: reflex run --env dev --frontend-port 3000 --backend-host 0.0.0.0 --backend-port 8001

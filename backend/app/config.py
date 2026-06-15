@@ -37,7 +37,7 @@ class Settings(BaseSettings):
 
     # ── AI provider selection ──────────────────────────────────────────────────
     # Choose which LLM backend to use. Only the matching API key is required.
-    ai_provider: Literal["anthropic", "qwen"] = "anthropic"
+    ai_provider: Literal["anthropic", "qwen", "openrouter"] = "anthropic"
 
     # ── Anthropic settings (used when ai_provider="anthropic") ─────────────────
     anthropic_api_key: str = ""
@@ -51,6 +51,15 @@ class Settings(BaseSettings):
     # qwen-plus offers a good balance of quality and speed for this use case.
     # Other options: qwen-max (best), qwen-turbo (fastest/cheapest)
     qwen_model: str = "qwen-plus"
+
+    # ── Openrouter settings (used when ai_provider="openrouter") ───────────────
+    # Get a key at: https://openrouter.ai/keys
+    openrouter_api_key: str = ""
+    # Model to use. Recommended: openai/gpt-4-turbo, claude-3-sonnet, meta-llama/llama-2-70b
+    # Full model list: https://openrouter.ai/docs/models
+    openrouter_model: str = "openai/gpt-4-turbo"
+    # Openrouter endpoint (should not need to change)
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
     # ── Database ───────────────────────────────────────────────────────────────
     database_url: str  # postgresql+asyncpg://user:pass@host/db
@@ -87,6 +96,10 @@ class Settings(BaseSettings):
         if self.ai_provider == "qwen" and not self.dashscope_api_key:
             raise ValueError(
                 "AI_PROVIDER=qwen requires DASHSCOPE_API_KEY to be set."
+            )
+        if self.ai_provider == "openrouter" and not self.openrouter_api_key:
+            raise ValueError(
+                "AI_PROVIDER=openrouter requires OPENROUTER_API_KEY to be set."
             )
         return self
 

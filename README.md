@@ -2,7 +2,7 @@
 
 > **Interactive security training that teaches developers to spot vulnerabilities in LLM-generated code.**
 
-[![CI](https://github.com/YOUR_USERNAME/securedeviq/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_USERNAME/securedeviq/actions)
+[![CI](https://github.com/YOUR_ORG/securedeviq/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_ORG/securedeviq/actions)
 ![Python](https://img.shields.io/badge/python-3.11-blue)
 ![Reflex](https://img.shields.io/badge/reflex-0.8.27-indigo)
 ![FastAPI](https://img.shields.io/badge/fastapi-0.115.12-teal)
@@ -44,7 +44,7 @@ SecureDevIQ trains developers to catch these flaws *before* they reach productio
 ┌──────────────────────────────────────────────────────────────────────┐
 │  Browser                                                             │
 │  ┌─────────────────────────────────────────────────────────────────┐ │
-│  │  Reflex Frontend (port 3000)                                    │ │
+│  │  Reflex Frontend (port 5173)                                    │ │
 │  │  • Login/Register page                                          │ │
 │  │  • Challenge page (code viewer + answer textarea)               │ │
 │  │  • Results page  (score, findings, fix suggestion)              │ │
@@ -53,24 +53,29 @@ SecureDevIQ trains developers to catch these flaws *before* they reach productio
 └───────────────────────────────┼──────────────────────────────────────┘
                                 │ httpx (REST)
 ┌───────────────────────────────▼──────────────────────────────────────┐
-│  FastAPI Backend (port 8000)                                         │
+│  FastAPI Backend (port 7429)                                         │
 │  • /api/auth        JWT registration + login                        │
-│  • /api/challenges  generate (→ Claude) + list + get                │
-│  • /api/submissions submit answer (→ Claude) + get + list           │
+│  • /api/challenges  generate (→ LLM) + list + get                   │
+│  • /api/submissions submit answer (→ LLM) + get + list              │
 │  • /api/dashboard   aggregated user statistics                      │
 │                                                                      │
 │  ┌─────────────────────────┐   ┌────────────────────────────────┐   │
 │  │  ai_service.py          │   │  PostgreSQL (via asyncpg)       │   │
-│  │  generate_challenge()   │   │  users / challenges /           │   │
-│  │  evaluate_submission()  │   │  submissions                    │   │
+│  │  • Multiple providers   │   │  users / challenges /           │   │
+│  │  • generate_challenge() │   │  submissions                    │   │
+│  │  • evaluate_submission()│   │                                 │   │
 │  └───────────┬─────────────┘   └────────────────────────────────┘   │
 └──────────────┼───────────────────────────────────────────────────────┘
-               │ Anthropic SDK
-┌──────────────▼───────────────────────────────────────────────────────┐
-│  Claude claude-sonnet-4-20250514                                     │
-│  • CHALLENGE_GENERATION_SYSTEM_PROMPT (prompts/generation.py)        │
-│  • CHALLENGE_EVALUATION_SYSTEM_PROMPT (prompts/evaluation.py)        │
-└──────────────────────────────────────────────────────────────────────┘
+               │ LLM Provider (selectable via AI_PROVIDER env var)
+       ┌───────┴───────┬──────────────┬──────────────┐
+       │               │              │              │
+┌──────▼───────┐ ┌─────▼──────┐ ┌────▼──────────┐  │
+│  Anthropic   │ │    Qwen    │ │  Openrouter  │  │
+│  (Claude)    │ │ (DashScope)│ │ (100+ models)│  │
+└──────────────┘ └────────────┘ └───────────────┘  │
+                                                   │
+• CHALLENGE_GENERATION_SYSTEM_PROMPT (prompts/generation.py)
+• CHALLENGE_EVALUATION_SYSTEM_PROMPT (prompts/evaluation.py)
 ```
 
 ---
@@ -80,24 +85,58 @@ SecureDevIQ trains developers to catch these flaws *before* they reach productio
 ### Prerequisites
 
 - Docker + Docker Compose
-- An Anthropic API key ([console.anthropic.com](https://console.anthropic.com/))
+- An LLM API key. Choose one:
+  - **Anthropic**: [console.anthropic.com](https://console.anthropic.com/) (Claude models)
+  - **Qwen/DashScope**: [DashScope Console](https://dashscope.aliyuncs.com/) (Alibaba's Qwen models)
+  - **Openrouter**: [openrouter.ai](https://openrouter.ai/keys) (100+ models including GPT-4, Claude, Llama)
 
 ### 1. Clone and configure
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/securedeviq.git
+git clone https://github.com/CyberKatsu/securedeviq.git
 cd securedeviq
 cp .env.example .env
 ```
 
-Open `.env` and set your key:
+### 2. Choose an AI provider and set credentials
 
+Open `.env` and select your AI provider:
+
+#### Option A: Anthropic (Claude) — Recommended
 ```dotenv
+AI_PROVIDER=anthropic
 ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_MODEL=claude-sonnet-4-20250514
 SECRET_KEY=$(openssl rand -hex 32)   # generate a strong secret
 ```
 
-### 2. Start with Docker Compose
+#### Option B: Qwen (DashScope)
+```dotenv
+AI_PROVIDER=qwen
+DASHSCOPE_API_KEY=sk-...
+QWEN_MODEL=qwen-plus
+SECRET_KEY=$(openssl rand -hex 32)
+```
+
+#### Option C: Openrouter (100+ models)
+```dotenv
+AI_PROVIDER=openrouter
+OPENROUTER_API_KEY=sk-or-...
+OPENROUTER_MODEL=openai/gpt-4-turbo   # or any supported model
+SECRET_KEY=$(openssl rand -hex 32)
+```
+
+### 3. (Optional) Customize ports
+
+If defaults (5173 frontend, 7429 backend) conflict with other services:
+
+```dotenv
+BACKEND_PORT=7429              # default: 7429
+FRONTEND_PORT=5173             # default: 5173
+FRONTEND_WEBSOCKET_PORT=5174   # default: 5174
+```
+
+### 4. Start with Docker Compose
 
 ```bash
 docker compose up --build
@@ -105,10 +144,18 @@ docker compose up --build
 
 This starts three services:
 - **db** (Postgres 16) — waits for a health check before the backend starts
-- **backend** (FastAPI/uvicorn) — runs `alembic upgrade head` then starts on port 8000
-- **frontend** (Reflex) — serves the UI on port 3000
+- **backend** (FastAPI/uvicorn) — runs `alembic upgrade head` then starts on port 7429 (or `BACKEND_PORT`)
+- **frontend** (Reflex) — serves the UI on port 5173 (or `FRONTEND_PORT`)
 
-Open **http://localhost:3000** in your browser.
+Open **http://localhost:5173** in your browser (or whatever `FRONTEND_PORT` you set).
+
+### 5. Register and try a challenge
+
+1. Create a new account (Register page)
+2. Click "Generate Challenge" to create a coding vulnerability
+3. Analyze the code and submit your findings
+4. See your score and detailed feedback
+5. View your progress in the Dashboard
 
 ### 3. Running without Docker (local development)
 

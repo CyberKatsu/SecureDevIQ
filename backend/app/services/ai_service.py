@@ -5,7 +5,7 @@ All LLM API calls are routed through this module.
 
 Architecture: provider abstraction
 ───────────────────────────────────
-Both Anthropic and Qwen expose the same two operations to the rest of the app:
+Anthropic, Qwen, and Openrouter expose the same two operations to the rest of the app:
 
   generate_challenge()  → GeneratedChallenge
   evaluate_submission() → ScoringResult
@@ -19,13 +19,14 @@ Provider implementations
   AnthropicProvider  — uses the official `anthropic` SDK (sync client,
                         wrapped with asyncio.to_thread() at the route layer)
   QwenProvider       — uses the `openai` SDK pointed at DashScope's
-                        OpenAI-compatible endpoint. Identical call pattern
-                        to AnthropicProvider; only the client construction
-                        and response extraction differ.
+                        OpenAI-compatible endpoint.
+  OpenrouterProvider — uses the `openai` SDK pointed at Openrouter's API.
+                        Both Qwen and Openrouter use identical call patterns;
+                        only the client construction differs.
 
-Both implementations:
+All implementations:
   • Use the same system prompt constants from app/prompts/
-  • Parse Claude/Qwen's JSON response through _strip_fences() + json.loads()
+  • Parse LLM JSON response through _strip_fences() + json.loads()
   • Return typed objects (GeneratedChallenge dataclass, ScoringResult Pydantic)
   • Raise ValueError with a human-readable message on any parse/validation error
 
@@ -33,7 +34,9 @@ Adding a new provider
 ──────────────────────
 1. Subclass BaseAIProvider and implement _call(system, user) -> str
 2. Add the provider name to Settings.ai_provider Literal in config.py
-3. Register it in get_provider()
+3. Implement provider-specific settings in config.py (API key, model, base_url)
+4. Add validation check in config.py:validate_provider_key()
+5. Register it in get_provider() with logging
 """
 import json
 import logging
@@ -279,6 +282,42 @@ class QwenProvider(BaseAIProvider):
         return response.choices[0].message.content or ""
 
 
+# ── Openrouter provider ───────────────────────────────────────────────────────
+
+class OpenrouterProvider(BaseAIProvider):
+    """
+    LLM provider backed by Openrouter (https://openrouter.ai/).
+
+    Openrouter is a unified API gateway that supports 100+ models including:
+      • OpenAI (GPT-4, GPT-3.5)
+      • Anthropic (Claude)
+      • Meta (Llama)
+      • Mistral
+      • And many more
+
+    Openrouter exposes an OpenAI-compatible /api/v1/chat/completions endpoint,
+    so we use the `openai` SDK with a custom base_url and API key.
+
+    The active base_url is configured via OPENROUTER_BASE_URL in .env.
+    """
+
+    def _call(self, system: str, user: str) -> str:
+        s = get_settings()
+        client = OpenAI(
+            api_key=s.openrouter_api_key,
+            base_url=s.openrouter_base_url,
+        )
+        response = client.chat.completions.create(
+            model=s.openrouter_model,
+            max_tokens=MAX_TOKENS,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+        return response.choices[0].message.content or ""
+
+
 # ── Provider factory ──────────────────────────────────────────────────────────
 
 @lru_cache(maxsize=1)
@@ -300,9 +339,12 @@ def get_provider() -> BaseAIProvider:
     if provider_name == "qwen":
         logger.info("AI provider: Qwen (%s via DashScope)", get_settings().qwen_model)
         return QwenProvider()
+    if provider_name == "openrouter":
+        logger.info("AI provider: Openrouter (%s)", get_settings().openrouter_model)
+        return OpenrouterProvider()
     raise ValueError(
         f"Unknown AI_PROVIDER '{provider_name}'. "
-        "Valid values: 'anthropic', 'qwen'."
+        "Valid values: 'anthropic', 'qwen', 'openrouter'."
     )
 
 
